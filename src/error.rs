@@ -9,6 +9,8 @@ pub enum Error {
     Secp256k1Error(secp256k1::Error),
     OutOfRangeError(secp256k1::scalar::OutOfRangeError),
     IOError(std::io::Error),
+    SliceError(bitcoin_hashes::FromSliceError),
+    PublicKeyNotFound(String),
 }
 
 impl fmt::Display for Error {
@@ -21,6 +23,8 @@ impl fmt::Display for Error {
             Error::Secp256k1Error(e) => e.fmt(f),
             Error::OutOfRangeError(e) => e.fmt(f),
             Error::IOError(e) => e.fmt(f),
+            Error::SliceError(e) => e.fmt(f),
+            Error::PublicKeyNotFound(msg) => write!(f, "{}", msg),
         }
     }
 }
@@ -54,5 +58,11 @@ impl From<secp256k1::scalar::OutOfRangeError> for Error {
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
         Error::IOError(e)
+    }
+}
+
+impl From<bitcoin_hashes::FromSliceError> for Error {
+    fn from(e: bitcoin_hashes::FromSliceError) -> Self {
+        Error::SliceError(e)
     }
 }
