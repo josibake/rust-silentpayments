@@ -1,5 +1,5 @@
 use crate::Error;
-use bitcoin_hashes::{sha256t_hash_newtype, sha256, hash160, Hash, HashEngine};
+use bitcoin_hashes::{sha256t_hash_newtype, hash160, Hash, HashEngine};
 use secp256k1::{
     PublicKey,
     Scalar,
@@ -161,9 +161,10 @@ pub fn get_pubkey_from_input(vin: &VinData) -> Result<Option<PublicKey>, Error> 
     return Ok(None);
 }
 
-pub fn hash_outpoints(sending_data: &Vec<(String, u32)>) -> Result<Scalar, Error> {
+pub fn hash_outpoints(sending_data: &Vec<(String, u32)>, A_sum: PublicKey) -> Result<Scalar, Error> {
     let mut outpoints: Vec<Vec<u8>> = vec![];
 
+    // should probably just use an OutPoints type properly at some point
     for outpoint in sending_data {
         let mut bytes: Vec<u8> = hex::decode(outpoint.0.as_str())?;
 
@@ -176,14 +177,6 @@ pub fn hash_outpoints(sending_data: &Vec<(String, u32)>) -> Result<Scalar, Error
 
     // sort outpoints
     outpoints.sort();
-
-    let mut engine = sha256::HashEngine::default();
-
-    for v in outpoints {
-        engine.write_all(&v)?;
-    }
-
-    Ok(Scalar::from_be_bytes(
-        sha256::Hash::from_engine(engine).to_byte_array(),
-    )?)
+    let smallest_outpoint = outpoints.first().unwrap();
+    Ok(InputsHash::from_outpoint_and_A_sum(&smallest_outpoint, &A_sum).to_scalar())
 }
