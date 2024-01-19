@@ -5,9 +5,9 @@ use std::{
 };
 
 use secp256k1::{
-    hashes::Hash,
     Message, PublicKey, Scalar, SecretKey, XOnlyPublicKey,
 };
+use bitcoin_hashes::Hash;
 use serde_json::from_str;
 
 use super::structs::{OutputWithSignature, TestData};
@@ -60,8 +60,11 @@ pub fn verify_and_calculate_signatures(
 ) -> Result<Vec<OutputWithSignature>, secp256k1::Error> {
     let secp = secp256k1::Secp256k1::new();
 
+    // should be able to use bitcoin_hashes for this too, but bitcoin_hashes::Hash doesn't
+    // implement the trait for secp256k1?
+    // TODO: fix this (maybe upstream, in bitcoin_hashes) so that we can use bitcoin_hashes for all the hashing
     let msg = Message::from_hashed_data::<secp256k1::hashes::sha256::Hash>(b"message");
-    let aux = secp256k1::hashes::sha256::Hash::hash(b"random auxiliary data").into_inner();
+    let aux = bitcoin_hashes::sha256::Hash::hash(b"random auxiliary data").to_byte_array();
 
     let mut res: Vec<OutputWithSignature> = vec![];
     for tweak in key_tweaks {
