@@ -46,7 +46,7 @@ mod tests {
             let expected = sendingtest.expected.outputs;
             let expected_output_addresses: HashSet<String> =
                 expected.iter().map(|(x, _)| x.into()).collect();
-            let outpoints = given.vin.iter().map(|vin| (vin.txid.clone(), vin.vout)).collect();
+            let outpoints: Vec<(String, u32)> = given.vin.iter().map(|vin| (vin.txid.clone(), vin.vout)).collect();
             let mut tmp_input_priv_keys = Vec::new();
             for input in given.vin {
 

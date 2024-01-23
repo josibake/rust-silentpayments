@@ -128,35 +128,75 @@ impl SharedSecretHash {
 
 pub fn get_pubkey_from_input(vin: &VinData) -> Result<Option<PublicKey>, Error> {
     if is_p2pkh(&vin.prevout) {
-        let spk_hash = &vin.prevout[3..23];
-        for i in (COMPRESSED_PUBKEY_SIZE..=vin.script_sig.len()).rev() {
-            let pubkey_bytes = &vin.script_sig[i - COMPRESSED_PUBKEY_SIZE..i];
-            let pubkey_hash = hash160::Hash::hash(pubkey_bytes);
-            if pubkey_hash.to_byte_array() == spk_hash {
-                return Ok(Some(PublicKey::from_slice(pubkey_bytes)?));
-            }
+        match (&vin.txinwitness.is_empty(), &vin.script_sig.is_empty()) {
+            (true, false) => {
+                let spk_hash = &vin.prevout[3..23];
+                for i in (COMPRESSED_PUBKEY_SIZE..=vin.script_sig.len()).rev() {
+                    if let Some(pubkey_bytes) = &vin.script_sig.get(i - COMPRESSED_PUBKEY_SIZE..i) {
+                        let pubkey_hash = hash160::Hash::hash(pubkey_bytes);
+                        if pubkey_hash.to_byte_array() == spk_hash {
+                            return Ok(Some(PublicKey::from_slice(pubkey_bytes)?));
+                        }
+                    } else {
+                        return Ok(None);
+                    }
+                }
+            },
+            (_, true) => return Err(Error::InvalidVin("Empty script_sig for spending a p2pkh".to_owned())),
+            (false, _) => return Err(Error::InvalidVin("non empty witness for spending a p2pkh".to_owned()))
         }
     } else if is_p2sh(&vin.prevout) {
-        let redeem_script = &vin.script_sig[1..];
-        if is_p2wpkh(redeem_script) {
-            let len = redeem_script.len();
-            return Ok(Some(PublicKey::from_slice(&redeem_script[len - COMPRESSED_PUBKEY_SIZE..len])?));
+        match (&vin.txinwitness.is_empty(), &vin.script_sig.is_empty()) {
+            (true, false) => {
+                let redeem_script = &vin.script_sig[1..];
+                if is_p2wpkh(redeem_script) {
+                    let len = redeem_script.len();
+                    return Ok(Some(PublicKey::from_slice(&redeem_script[len - COMPRESSED_PUBKEY_SIZE..len])?));
+                }
+            },
+            (_, true) => return Err(Error::InvalidVin("Empty script_sig for spending a p2sh".to_owned())),
+            (false, _) => return Err(Error::InvalidVin("non empty witness for spending a p2sh".to_owned()))
         }
     } else if is_p2wpkh(&vin.prevout) {
-        return Ok(Some(PublicKey::from_slice(vin.txinwitness.last().unwrap())?));
-    } else if is_p2tr(&vin.prevout) {
-        // check for the optional annex
-        let annex = if vin.txinwitness.last().unwrap()[0] == 0x50 { 1 } else { 0 };
-        // check for script path
-        let stack_size = vin.txinwitness.len();
-        if stack_size - annex > 1 {
-            let control_block = &vin.txinwitness[stack_size - annex - 1];
-            if control_block[1..33] == NUMS_H {
-                return Ok(None);
-            }
+        match (&vin.txinwitness.is_empty(), &vin.script_sig.is_empty()) {
+            (false, true) => {
+                if let Some(value) = vin.txinwitness.last() {
+                    if let Ok(pubkey) = PublicKey::from_slice(value) {
+                        return Ok(Some(pubkey));
+                    } else {
+                        return Ok(None);
+                    }
+                } else {
+                    return Err(Error::InvalidVin("Empty witness".to_owned()));
+                }
+            },
+            (_, false) => return Err(Error::InvalidVin("Non empty script sig for spending a segwit output".to_owned())),
+            (true, _) => return Err(Error::InvalidVin("Empty witness for spending a segwit output".to_owned()))
         }
-        let x_only_public_key = XOnlyPublicKey::from_slice(&vin.prevout[2..34]).unwrap();
-        return Ok(Some(PublicKey::from_x_only_public_key(x_only_public_key, Even)));
+    } else if is_p2tr(&vin.prevout) {
+        match (&vin.txinwitness.is_empty(), &vin.script_sig.is_empty()) {
+            (false, true) => {
+                // check for the optional annex
+                let annex = match vin.txinwitness.last().and_then(|value| value.get(0)) {
+                    Some(&0x50) => 1,
+                    Some(_) => 0, 
+                    None => return Err(Error::InvalidVin("Empty or invalid witness".to_owned())),
+                };
+
+                // Check for script path
+                let stack_size = vin.txinwitness.len();
+                if stack_size > annex && vin.txinwitness[stack_size - annex - 1][1..33] == NUMS_H {
+                    return Ok(None);
+                }
+
+                // Return the pubkey from the script pubkey
+                return XOnlyPublicKey::from_slice(&vin.prevout[2..34])
+                    .map_err(|e| Error::Secp256k1Error(e))
+                    .map(|x_only_public_key| Some(PublicKey::from_x_only_public_key(x_only_public_key, Even)));
+            },
+            (_, false) => return Err(Error::InvalidVin("Non empty script sig for spending a segwit output".to_owned())),
+            (true, _) => return Err(Error::InvalidVin("Empty witness for spending a segwit output".to_owned()))
+        }
     }
     return Ok(None);
 }
